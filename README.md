@@ -4,7 +4,7 @@ This is the app for the Web API, Inclusivity, and Multitouch Projects.
 
 I seek to meet this requirement during completion:
 
--Add new feature without AI
+-Alter AI code to add a new feature
 
 <br>
 
