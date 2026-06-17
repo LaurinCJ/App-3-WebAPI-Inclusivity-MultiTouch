@@ -218,6 +218,7 @@ class MainActivity : AppCompatActivity() {
         statusText.text = getString(R.string.sample_data_loaded)
 
         loadLiveEarthquakeData()
+        updateInclusiveDisplay()
     }
 
     private fun loadLiveEarthquakeData() {
@@ -543,11 +544,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun styleFilterButton(button: Button, isSelected: Boolean) {
         /*
-            Filter buttons are styled for legibility first.
+            Filter buttons use a custom background so the selected state is shown
+            with a border instead of a filled purple button.
 
-            The button fill stays light gray and the text stays black whether the
-            filter is selected or not. Selection is shown with a purple border
-            instead of changing the full button color.
+            Important detail:
+            backgroundTintList must be set to null. If we set it to transparent,
+            Android tints the whole custom drawable transparent, which hides both
+            the light gray fill and the border.
         */
         val highContrast = highContrastSwitch.isChecked
 
@@ -567,22 +570,42 @@ class MainActivity : AppCompatActivity() {
             highContrast && isSelected -> Color.YELLOW
             highContrast -> Color.WHITE
             isSelected -> Color.rgb(103, 58, 183)
-            else -> Color.rgb(190, 190, 190)
+            else -> Color.rgb(185, 185, 185)
         }
 
         val strokeWidth = if (isSelected) {
-            dp(3)
+            dp(4)
         } else {
             dp(1)
         }
 
+        button.backgroundTintList = null
         button.setTextColor(textColor)
-        button.textSize = if (largeTextSwitch.isChecked) 15f else 13f
+        button.textSize = if (largeTextSwitch.isChecked) 22f else 16f
+        button.minHeight = if (largeTextSwitch.isChecked) dp(64) else dp(56)
+        button.setPadding(dp(8), dp(6), dp(8), dp(6))
+        button.isAllCaps = false
+
         button.background = GradientDrawable().apply {
             cornerRadius = dp(10).toFloat()
             setColor(fillColor)
             setStroke(strokeWidth, strokeColor)
         }
+
+        button.backgroundTintList = null
+    }
+
+    private fun styleMainActionButton(button: Button) {
+        /*
+            Main action buttons are the Refresh and Reset buttons.
+
+            Large text mode should affect buttons too, not just TextViews. A 48dp
+            button with 15sp text still feels small, so large text mode uses 24sp
+            and slightly taller buttons for readability.
+        */
+        button.textSize = if (largeTextSwitch.isChecked) 24f else 12f
+        button.minHeight = if (largeTextSwitch.isChecked) dp(64) else dp(48)
+        button.setPadding(dp(8), dp(6), dp(8), dp(6))
     }
 
     private fun filterLabel(): String {
@@ -655,6 +678,8 @@ class MainActivity : AppCompatActivity() {
             ?: getString(R.string.no_quake_selected)
 
         updateSummary()
+        styleMainActionButton(findViewById(R.id.refreshDataButton))
+        styleMainActionButton(findViewById(R.id.resetMapButton))
         updateFilterButtons()
         renderQuakeList(visibleQuakeEvents)
     }

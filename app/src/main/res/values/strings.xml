@@ -4,7 +4,7 @@
     <string name="app_title">QuakeScope</string>
     <string name="app_subtitle">Explore recent earthquake activity with an accessible multi-touch map.</string>
 
-    <string name="refresh_data">Refresh live data</string>
+    <string name="refresh_data">Refresh Data</string>
     <string name="reset_map">Reset map</string>
 
     <string name="quake_map_description">Interactive earthquake map. Pinch with two fingers to zoom, drag to pan, and tap a marker to view details.</string>
