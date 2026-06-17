@@ -1,4 +1,4 @@
-This is the app for the Web API, Inclusivity, and Multitouch projects.
+This is the app for the Web API, Inclusivity, and Multitouch Projects.
 
 <br>
 
