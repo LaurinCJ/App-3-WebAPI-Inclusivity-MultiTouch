@@ -1,19 +1,148 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="#F7F4EE"
+    android:fillViewport="true"
     tools:context=".MainActivity">
 
-    <TextView
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:id="@+id/mainContent"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Hello World!"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="28dp">
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <TextView
+            android:id="@+id/appTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/app_title"
+            android:textColor="#1F1F1F"
+            android:textSize="30sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/appSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/app_subtitle"
+            android:textColor="#3F3A34"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/refreshDataButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:minHeight="48dp"
+                android:text="@string/refresh_data" />
+
+            <Button
+                android:id="@+id/resetMapButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:minHeight="48dp"
+                android:text="@string/reset_map" />
+        </LinearLayout>
+
+        <com.android.example.webapi_inclusivity_multitouch.QuakeMapView
+            android:id="@+id/quakeMapView"
+            android:layout_width="match_parent"
+            android:layout_height="360dp"
+            android:layout_marginTop="18dp"
+            android:contentDescription="@string/quake_map_description"
+        />
+
+        <TextView
+            android:id="@+id/selectedQuakeTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="@string/selected_quake_title"
+            android:textColor="#1F1F1F"
+            android:textSize="20sp"
+            android:textStyle="bold"
+        /> <!-- Earthquake Name Display -->
+
+        <TextView
+            android:id="@+id/selectedQuakeDetails"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="#FFFFFF"
+            android:padding="16dp"
+            android:text="@string/no_quake_selected"
+            android:textColor="#2A2A2A"
+            android:textSize="16sp"
+        /> <!-- Details Display -->
+
+        <TextView
+            android:id="@+id/inclusivityTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:text="@string/inclusivity_options"
+            android:textColor="#1F1F1F"
+            android:textSize="20sp"
+            android:textStyle="bold"
+        /> <!-- TODO Edit if necessary, Altered Title for Inclusivity -->
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/highContrastSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/high_contrast_mode"
+            android:textColor="#2A2A2A"
+            android:textSize="16sp"
+        /> <!-- Option to turn on High Contrast -->
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/largeTextSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/large_text_mode"
+            android:textColor="#2A2A2A"
+            android:textSize="16sp"
+        /> <!-- Option to turn on Large Text -->
+
+        <TextView
+            android:id="@+id/recentQuakesTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:text="@string/recent_quakes"
+            android:textColor="#1F1F1F"
+            android:textSize="20sp"
+            android:textStyle="bold"
+        />
+
+        <LinearLayout
+            android:id="@+id/quakeListContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical"
+        />
+
+    </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>

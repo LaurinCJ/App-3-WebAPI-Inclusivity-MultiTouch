@@ -1,3 +1,23 @@
 <resources>
-    <string name="app_name">WebAPI_Inclusivity_MultiTouch</string>
+    <string name="app_name">QuakeScope</string>
+
+    <string name="app_title">QuakeScope</string>
+    <string name="app_subtitle">Explore recent earthquake activity with an accessible multi-touch map.</string>
+
+    <string name="refresh_data">Refresh live data</string>
+    <string name="reset_map">Reset map</string>
+
+    <string name="quake_map_description">Interactive earthquake map. Pinch with two fingers to zoom, drag to pan, and tap a marker to view details.</string>
+    <string name="selected_quake_title">Selected earthquake</string>
+    <string name="no_quake_selected">Tap an earthquake marker or list item to view details.</string>
+
+    <string name="inclusivity_options">Accessibility options</string>
+    <string name="high_contrast_mode">High contrast mode</string>
+    <string name="large_text_mode">Large text mode</string>
+
+    <string name="recent_quakes">Earthquake list</string>
+    <string name="quake_list_item">M%1$.1f • %2$s</string>
+    <string name="quake_list_item_content_description">Magnitude %1$.1f earthquake near %2$s. Tap to view details.</string>
+
+    <string name="live_data_next">The live USGS Web API connection will be added in the next checkpoint.</string>
 </resources>
