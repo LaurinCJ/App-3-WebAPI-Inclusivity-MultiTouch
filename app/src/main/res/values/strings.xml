@@ -19,5 +19,9 @@
     <string name="quake_list_item">M%1$.1f • %2$s</string>
     <string name="quake_list_item_content_description">Magnitude %1$.1f earthquake near %2$s. Tap to view details.</string>
 
-    <string name="live_data_next">The live USGS Web API connection will be added in the next checkpoint.</string>
+    <string name="loading_live_data">Loading live USGS earthquake data...</string>
+    <string name="live_data_loaded">Showing live USGS earthquake data from the past day.</string>
+    <string name="sample_data_loaded">Showing built-in sample data until live data loads.</string>
+    <string name="live_data_failed">Could not load live data. Showing sample data instead.</string>
+    <string name="no_live_quakes">No earthquake events were found in the live feed.</string>
 </resources>

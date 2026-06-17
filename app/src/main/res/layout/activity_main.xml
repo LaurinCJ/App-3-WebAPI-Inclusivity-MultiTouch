@@ -62,6 +62,18 @@
                 android:text="@string/reset_map" />
         </LinearLayout>
 
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:text="@string/sample_data_loaded"
+            android:textColor="#3F3A34"
+            android:textSize="15sp"
+        />
+
         <com.android.example.webapi_inclusivity_multitouch.QuakeMapView
             android:id="@+id/quakeMapView"
             android:layout_width="match_parent"

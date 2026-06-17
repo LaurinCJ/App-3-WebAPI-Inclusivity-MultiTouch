@@ -4,21 +4,26 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
     private lateinit var mainContent: LinearLayout
     private lateinit var quakeMapView: QuakeMapView
+    private lateinit var statusText: TextView
     private lateinit var selectedQuakeDetails: TextView
     private lateinit var quakeListContainer: LinearLayout
     private lateinit var highContrastSwitch: SwitchCompat
@@ -27,6 +32,9 @@ class MainActivity : AppCompatActivity() {
     private var quakeEvents: List<QuakeEvent> = emptyList()
     private var selectedQuake: QuakeEvent? = null
 
+    private val usgsFeedUrl =
+        "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
+
     private val sampleQuakes = listOf(
         QuakeEvent(
             id = "sample-1",
@@ -34,7 +42,8 @@ class MainActivity : AppCompatActivity() {
             magnitude = 4.8,
             timeText = "Sample event • 14 minutes ago",
             latitude = 61.21,
-            longitude = -149.90
+            longitude = -149.90,
+            depthKm = 35.0
         ),
         QuakeEvent(
             id = "sample-2",
@@ -42,7 +51,8 @@ class MainActivity : AppCompatActivity() {
             magnitude = 5.6,
             timeText = "Sample event • 42 minutes ago",
             latitude = -33.45,
-            longitude = -71.66
+            longitude = -71.66,
+            depthKm = 22.0
         ),
         QuakeEvent(
             id = "sample-3",
@@ -50,7 +60,8 @@ class MainActivity : AppCompatActivity() {
             magnitude = 4.3,
             timeText = "Sample event • 1 hour ago",
             latitude = 38.27,
-            longitude = 142.82
+            longitude = 142.82,
+            depthKm = 48.0
         ),
         QuakeEvent(
             id = "sample-4",
@@ -58,7 +69,8 @@ class MainActivity : AppCompatActivity() {
             magnitude = 3.1,
             timeText = "Sample event • 2 hours ago",
             latitude = 36.77,
-            longitude = -119.42
+            longitude = -119.42,
+            depthKm = 12.0
         ),
         QuakeEvent(
             id = "sample-5",
@@ -66,7 +78,8 @@ class MainActivity : AppCompatActivity() {
             magnitude = 4.9,
             timeText = "Sample event • 3 hours ago",
             latitude = -41.29,
-            longitude = 174.78
+            longitude = 174.78,
+            depthKm = 30.0
         )
     )
 
@@ -83,6 +96,7 @@ class MainActivity : AppCompatActivity() {
 
         mainContent = findViewById(R.id.mainContent)
         quakeMapView = findViewById(R.id.quakeMapView)
+        statusText = findViewById(R.id.statusText)
         selectedQuakeDetails = findViewById(R.id.selectedQuakeDetails)
         quakeListContainer = findViewById(R.id.quakeListContainer)
         highContrastSwitch = findViewById(R.id.highContrastSwitch)
@@ -97,7 +111,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.refreshDataButton).setOnClickListener {
-            Toast.makeText(this, getString(R.string.live_data_next), Toast.LENGTH_SHORT).show()
+            loadLiveEarthquakeData()
         }
 
         highContrastSwitch.setOnCheckedChangeListener { _, _ ->
@@ -109,6 +123,112 @@ class MainActivity : AppCompatActivity() {
         }
 
         showQuakeEvents(sampleQuakes)
+        statusText.text = getString(R.string.sample_data_loaded)
+
+        loadLiveEarthquakeData()
+    }
+
+    private fun loadLiveEarthquakeData() {
+        statusText.text = getString(R.string.loading_live_data)
+
+        thread {
+            try {
+                val liveEvents = fetchEarthquakesFromUsgs()
+
+                runOnUiThread {
+                    if (liveEvents.isEmpty()) {
+                        statusText.text = getString(R.string.no_live_quakes)
+                        showQuakeEvents(emptyList())
+                    } else {
+                        statusText.text = getString(R.string.live_data_loaded)
+                        showQuakeEvents(liveEvents)
+                    }
+                    updateInclusiveDisplay()
+                }
+            } catch (exception: Exception) {
+                runOnUiThread {
+                    statusText.text = getString(R.string.live_data_failed)
+                    showQuakeEvents(sampleQuakes)
+                    updateInclusiveDisplay()
+                }
+            }
+        }
+    }
+
+    private fun fetchEarthquakesFromUsgs(): List<QuakeEvent> {
+        val connection = URL(usgsFeedUrl).openConnection() as HttpURLConnection
+
+        return try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                throw IllegalStateException("HTTP error ${connection.responseCode}")
+            }
+
+            val jsonText = connection.inputStream.bufferedReader().use { reader ->
+                reader.readText()
+            }
+
+            parseEarthquakeGeoJson(jsonText)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun parseEarthquakeGeoJson(jsonText: String): List<QuakeEvent> {
+        val root = JSONObject(jsonText)
+        val features = root.getJSONArray("features")
+        val events = mutableListOf<QuakeEvent>()
+
+        val maxEventsToShow = minOf(features.length(), 30)
+
+        for (index in 0 until maxEventsToShow) {
+            val feature = features.getJSONObject(index)
+            val properties = feature.getJSONObject("properties")
+            val geometry = feature.getJSONObject("geometry")
+            val coordinates = geometry.getJSONArray("coordinates")
+
+            val id = feature.optString("id", "event-$index")
+            val place = properties.optString("place", "Unknown location")
+
+            val rawMagnitude = properties.optDouble("mag", 0.0)
+            val magnitude = if (rawMagnitude.isNaN()) 0.0 else rawMagnitude
+
+            val timeMillis = properties.optLong("time", 0L)
+            val timeText = formatTime(timeMillis)
+
+            val longitude = coordinates.optDouble(0, 0.0)
+            val latitude = coordinates.optDouble(1, 0.0)
+            val depthKm = coordinates.optDouble(2, 0.0)
+
+            val eventUrl = properties.optString("url", "")
+
+            events.add(
+                QuakeEvent(
+                    id = id,
+                    place = place,
+                    magnitude = magnitude,
+                    timeText = timeText,
+                    latitude = latitude,
+                    longitude = longitude,
+                    depthKm = depthKm,
+                    eventUrl = eventUrl
+                )
+            )
+        }
+
+        return events.sortedByDescending { it.magnitude }
+    }
+
+    private fun formatTime(timeMillis: Long): String {
+        if (timeMillis <= 0L) {
+            return "Time not available"
+        }
+
+        val formatter = SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.US)
+        return "USGS reported ${formatter.format(Date(timeMillis))}"
     }
 
     private fun showQuakeEvents(events: List<QuakeEvent>) {
@@ -134,6 +254,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderQuakeList(events: List<QuakeEvent>) {
         quakeListContainer.removeAllViews()
+
+        if (events.isEmpty()) {
+            val emptyMessage = TextView(this).apply {
+                text = getString(R.string.no_live_quakes)
+                textSize = if (largeTextSwitch.isChecked) 20f else 16f
+                setTextColor(if (highContrastSwitch.isChecked) Color.WHITE else Color.rgb(32, 32, 32))
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                background = createRowBackground(false)
+            }
+
+            quakeListContainer.addView(
+                emptyMessage,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            return
+        }
 
         events.forEach { quake ->
             val isSelected = quake.id == selectedQuake?.id
@@ -174,6 +314,10 @@ class MainActivity : AppCompatActivity() {
         quakeMapView.setHighContrast(highContrast)
 
         mainContent.setBackgroundColor(if (highContrast) Color.BLACK else Color.rgb(247, 244, 238))
+        statusText.setBackgroundColor(if (highContrast) Color.rgb(25, 25, 25) else Color.WHITE)
+        statusText.setTextColor(if (highContrast) Color.WHITE else Color.rgb(63, 58, 52))
+        statusText.textSize = if (largeText) 19f else 15f
+
         selectedQuakeDetails.setBackgroundColor(if (highContrast) Color.rgb(25, 25, 25) else Color.WHITE)
         selectedQuakeDetails.setTextColor(if (highContrast) Color.WHITE else Color.rgb(42, 42, 42))
         selectedQuakeDetails.textSize = if (largeText) 20f else 16f
@@ -212,14 +356,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun formatQuakeDetails(quake: QuakeEvent): String {
+        val urlText = if (quake.eventUrl.isBlank()) {
+            "Source URL not available"
+        } else {
+            "Source: ${quake.eventUrl}"
+        }
+
         return String.format(
             Locale.US,
-            "Magnitude %.1f\n%s\n%s\nLatitude %.2f, Longitude %.2f",
+            "Magnitude %.1f\n%s\n%s\nLatitude %.2f, Longitude %.2f\nDepth %.1f km\n%s",
             quake.magnitude,
             quake.place,
             quake.timeText,
             quake.latitude,
-            quake.longitude
+            quake.longitude,
+            quake.depthKm,
+            urlText
         )
     }
 
