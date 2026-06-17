@@ -24,4 +24,16 @@
     <string name="sample_data_loaded">Showing built-in sample data until live data loads.</string>
     <string name="live_data_failed">Could not load live data. Showing sample data instead.</string>
     <string name="no_live_quakes">No earthquake events were found in the live feed.</string>
+
+    <string name="data_summary_title">Earthquake summary</string>
+    <string name="summary_no_events">No earthquake events are loaded yet.</string>
+    <string name="summary_loaded">Total loaded: %1$d\nCurrently visible: %2$d\nStrongest: M%3$.1f near %4$s\nAverage depth: %5$.1f km</string>
+    <string name="summary_no_visible">Total loaded: %1$d\nCurrently visible: 0\nNo earthquakes match the current filter.</string>
+
+    <string name="filter_title">Magnitude filter</string>
+    <string name="filter_all">All</string>
+    <string name="filter_2_5">M 2.5+</string>
+    <string name="filter_4_0">M 4.0+</string>
+    <string name="filter_5_0">M 5.0+</string>
+    <string name="current_filter">Current filter: %1$s</string>
 </resources>

@@ -22,52 +22,60 @@ import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
     /*
-        These lateinit variables store references to the views from activity_main.xml.
+        These lateinit variables store references to views from activity_main.xml.
 
-        lateinit means:
-        - we promise these variables will be initialized before we use them
-        - they do not need nullable types like TextView?
-        - they are assigned in onCreate() after setContentView()
+        lateinit is safe here because each variable is assigned in onCreate()
+        after setContentView() loads the XML layout.
     */
     private lateinit var mainContent: LinearLayout
     private lateinit var quakeMapView: QuakeMapView
     private lateinit var statusText: TextView
+    private lateinit var dataSummaryText: TextView
+    private lateinit var currentFilterText: TextView
     private lateinit var selectedQuakeDetails: TextView
     private lateinit var quakeListContainer: LinearLayout
     private lateinit var highContrastSwitch: SwitchCompat
     private lateinit var largeTextSwitch: SwitchCompat
 
-    /*
-        quakeEvents stores whatever list the app is currently showing.
+    private lateinit var filterAllButton: Button
+    private lateinit var filter25Button: Button
+    private lateinit var filter40Button: Button
+    private lateinit var filter50Button: Button
 
-        At first, this is sample data. After the web API succeeds, this becomes
-        live USGS data.
+    /*
+        quakeEvents stores the full data set currently loaded.
+
+        visibleQuakeEvents stores the smaller filtered data set currently shown
+        on the map and in the list.
     */
     private var quakeEvents: List<QuakeEvent> = emptyList()
+    private var visibleQuakeEvents: List<QuakeEvent> = emptyList()
 
     /*
-        selectedQuake keeps track of the event currently selected from either:
-        - the map marker
-        - the list row
+        selectedQuake tracks the event currently selected from the map or list.
     */
     private var selectedQuake: QuakeEvent? = null
 
     /*
-        USGS provides earthquake feeds as GeoJSON.
+        This controls which events are visible.
 
-        This feed contains all earthquakes from the past day. It is useful for
-        this project because it changes over time and gives us real data for
-        the Web API requirement.
+        0.0 means "All".
+        2.5 means only earthquakes magnitude 2.5 and higher.
+        4.0 means only earthquakes magnitude 4.0 and higher.
+        5.0 means only earthquakes magnitude 5.0 and higher.
+    */
+    private var minimumMagnitudeFilter = 0.0
+
+    /*
+        USGS all_day GeoJSON feed. This gives us recent live earthquake data
+        for the Web API requirement.
     */
     private val usgsFeedUrl =
         "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
 
     /*
-        Sample data is shown immediately so the app is not blank while the
-        network request is running.
-
-        It also gives us a fallback if the emulator/device has no internet,
-        the USGS feed is temporarily unreachable, or parsing fails.
+        Sample earthquakes are still useful because they make the app usable
+        immediately and provide a fallback if the live API request fails.
     */
     private val sampleQuakes = listOf(
         QuakeEvent(
@@ -121,18 +129,14 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         /*
-            enableEdgeToEdge() lets the app draw behind system bars.
-            The inset listener below adds padding so content does not get hidden
-            behind the status/navigation bars.
+            Let the app draw edge-to-edge, then apply system bar padding below.
         */
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
         /*
-            This handles the system bar area safely.
-
-            Without this, content can appear underneath the top status bar or
-            bottom navigation controls on some devices.
+            This keeps content from being hidden by the status bar or bottom
+            navigation controls.
         */
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -141,46 +145,62 @@ class MainActivity : AppCompatActivity() {
         }
 
         /*
-            Connect Kotlin variables to the XML views.
-            After this point, these view references are safe to use.
+            Connect Kotlin variables to XML views.
         */
         mainContent = findViewById(R.id.mainContent)
         quakeMapView = findViewById(R.id.quakeMapView)
         statusText = findViewById(R.id.statusText)
+        dataSummaryText = findViewById(R.id.dataSummaryText)
+        currentFilterText = findViewById(R.id.currentFilterText)
         selectedQuakeDetails = findViewById(R.id.selectedQuakeDetails)
         quakeListContainer = findViewById(R.id.quakeListContainer)
         highContrastSwitch = findViewById(R.id.highContrastSwitch)
         largeTextSwitch = findViewById(R.id.largeTextSwitch)
 
-        /*
-            QuakeMapView is a custom View, so it cannot directly update the
-            activity's TextViews.
+        filterAllButton = findViewById(R.id.filterAllButton)
+        filter25Button = findViewById(R.id.filter25Button)
+        filter40Button = findViewById(R.id.filter40Button)
+        filter50Button = findViewById(R.id.filter50Button)
 
-            Instead, the custom View exposes onQuakeSelected. MainActivity
-            assigns a function here so the map can tell the activity when a
-            marker was tapped.
+        /*
+            The custom map reports marker taps back to MainActivity through this
+            callback.
         */
         quakeMapView.onQuakeSelected = { quake ->
             selectQuake(quake)
         }
 
-        /*
-            Reset restores the custom map's zoom and pan state.
-        */
         findViewById<Button>(R.id.resetMapButton).setOnClickListener {
             quakeMapView.resetView()
         }
 
-        /*
-            Refresh runs the live Web API request again.
-        */
         findViewById<Button>(R.id.refreshDataButton).setOnClickListener {
             loadLiveEarthquakeData()
         }
 
         /*
-            These switches do not reload data. They only change how the current
-            data is displayed.
+            Filter buttons change the minimum visible earthquake magnitude.
+            The same filter is applied to both the map and the list.
+        */
+        filterAllButton.setOnClickListener {
+            applyMagnitudeFilter(0.0)
+        }
+
+        filter25Button.setOnClickListener {
+            applyMagnitudeFilter(2.5)
+        }
+
+        filter40Button.setOnClickListener {
+            applyMagnitudeFilter(4.0)
+        }
+
+        filter50Button.setOnClickListener {
+            applyMagnitudeFilter(5.0)
+        }
+
+        /*
+            These switches change display/accessibility behavior without
+            reloading data.
         */
         highContrastSwitch.setOnCheckedChangeListener { _, _ ->
             updateInclusiveDisplay()
@@ -191,15 +211,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         /*
-            Show sample data immediately so the app looks useful even before
-            the network request finishes.
+            Start with sample data so the app immediately shows a useful UI.
+            Then attempt to replace it with live data.
         */
         showQuakeEvents(sampleQuakes)
         statusText.text = getString(R.string.sample_data_loaded)
 
-        /*
-            Then attempt to replace the sample data with live data.
-        */
         loadLiveEarthquakeData()
     }
 
@@ -207,18 +224,15 @@ class MainActivity : AppCompatActivity() {
         statusText.text = getString(R.string.loading_live_data)
 
         /*
-            Android does not allow network requests on the main UI thread.
-
-            This thread block runs the API request in the background so the UI
-            does not freeze while waiting for the internet response.
+            Network requests cannot run on Android's main UI thread.
+            This background thread performs the HTTP request and JSON parsing.
         */
         thread {
             try {
                 val liveEvents = fetchEarthquakesFromUsgs()
 
                 /*
-                    UI updates must happen on the main thread.
-                    runOnUiThread safely switches back to the UI thread.
+                    UI changes must happen on the UI thread.
                 */
                 runOnUiThread {
                     if (liveEvents.isEmpty()) {
@@ -229,16 +243,12 @@ class MainActivity : AppCompatActivity() {
                         showQuakeEvents(liveEvents)
                     }
 
-                    /*
-                        Reapply display settings because the list/map contents
-                        may have just changed.
-                    */
                     updateInclusiveDisplay()
                 }
             } catch (exception: Exception) {
                 /*
-                    If anything goes wrong, the app still remains usable by
-                    falling back to sample data.
+                    If the request fails, fall back to sample data instead of
+                    leaving the app empty.
                 */
                 runOnUiThread {
                     statusText.text = getString(R.string.live_data_failed)
@@ -251,11 +261,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchEarthquakesFromUsgs(): List<QuakeEvent> {
         /*
-            HttpURLConnection is Android/Java's built-in way to make a basic
-            HTTP request without adding another dependency.
-
-            Later, larger apps might use Retrofit, but this is enough for a
-            focused course project.
+            HttpURLConnection is built into Android/Java, so it lets us complete
+            the Web API requirement without adding another dependency.
         */
         val connection = URL(usgsFeedUrl).openConnection() as HttpURLConnection
 
@@ -264,44 +271,30 @@ class MainActivity : AppCompatActivity() {
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
 
-            /*
-                HTTP_OK means status code 200.
-                Anything else is treated as a failed request.
-            */
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                 throw IllegalStateException("HTTP error ${connection.responseCode}")
             }
 
-            /*
-                Read the entire JSON response into a String.
-            */
             val jsonText = connection.inputStream.bufferedReader().use { reader ->
                 reader.readText()
             }
 
             parseEarthquakeGeoJson(jsonText)
         } finally {
-            /*
-                Always disconnect when finished so the connection is cleaned up.
-            */
             connection.disconnect()
         }
     }
 
     private fun parseEarthquakeGeoJson(jsonText: String): List<QuakeEvent> {
         /*
-            The USGS feed is GeoJSON.
-
-            Its top-level object contains an array called "features".
-            Each feature represents one earthquake event.
+            The USGS GeoJSON feed stores earthquake events in a "features" array.
         */
         val root = JSONObject(jsonText)
         val features = root.getJSONArray("features")
         val events = mutableListOf<QuakeEvent>()
 
         /*
-            Limit the displayed results so the list and map stay readable.
-            The feed can contain many small earthquakes.
+            Limit the app to 30 events so the map/list remain readable.
         */
         val maxEventsToShow = minOf(features.length(), 30)
 
@@ -312,22 +305,12 @@ class MainActivity : AppCompatActivity() {
             val coordinates = geometry.getJSONArray("coordinates")
 
             /*
-                GeoJSON structure used here:
-
-                feature.id
-                feature.properties.place
-                feature.properties.mag
-                feature.properties.time
-                feature.properties.url
-                feature.geometry.coordinates = [longitude, latitude, depth]
+                USGS coordinate order is:
+                [longitude, latitude, depth]
             */
             val id = feature.optString("id", "event-$index")
             val place = properties.optString("place", "Unknown location")
 
-            /*
-                optDouble can produce NaN if the value is missing or invalid.
-                Replacing NaN with 0.0 prevents display/math problems.
-            */
             val rawMagnitude = properties.optDouble("mag", 0.0)
             val magnitude = if (rawMagnitude.isNaN()) 0.0 else rawMagnitude
 
@@ -355,8 +338,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         /*
-            Sorting by magnitude makes the strongest earthquakes appear first.
-            This makes the list more useful than leaving it in feed order.
+            Stronger earthquakes are usually more important to users, so they
+            appear first.
         */
         return events.sortedByDescending { it.magnitude }
     }
@@ -366,66 +349,92 @@ class MainActivity : AppCompatActivity() {
             return "Time not available"
         }
 
-        /*
-            Convert the USGS timestamp into a readable date/time string.
-        */
         val formatter = SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.US)
         return "USGS reported ${formatter.format(Date(timeMillis))}"
     }
 
     private fun showQuakeEvents(events: List<QuakeEvent>) {
         /*
-            Update the shared app state first.
+            Store the complete loaded dataset, then apply the active filter.
         */
         quakeEvents = events
+        applyCurrentFilter(selectFirstVisibleEvent = true)
+    }
+
+    private fun applyMagnitudeFilter(minimumMagnitude: Double) {
+        /*
+            Update filter state, then rebuild the visible map/list from the full
+            loaded dataset.
+        */
+        minimumMagnitudeFilter = minimumMagnitude
+        applyCurrentFilter(selectFirstVisibleEvent = true)
+    }
+
+    private fun applyCurrentFilter(selectFirstVisibleEvent: Boolean) {
+        /*
+            Filtering happens from quakeEvents, which is the full loaded data set.
+            The result becomes visibleQuakeEvents, which powers the map/list.
+        */
+        visibleQuakeEvents = if (minimumMagnitudeFilter <= 0.0) {
+            quakeEvents
+        } else {
+            quakeEvents.filter { quake ->
+                quake.magnitude >= minimumMagnitudeFilter
+            }
+        }
 
         /*
-            Send the same data to both the visual map and the accessible list.
+            Update the custom map with only the visible events.
         */
-        quakeMapView.setQuakes(events)
-        renderQuakeList(events)
+        quakeMapView.setQuakes(visibleQuakeEvents)
+
+        updateSummary()
+        updateFilterButtons()
 
         /*
-            Select the first event automatically so the details area is useful
-            immediately.
+            Try to keep the same selected quake when possible.
+            If the selected quake is filtered out, choose the first visible one.
         */
-        if (events.isNotEmpty()) {
-            selectQuake(events.first())
+        val selectedStillVisible = selectedQuake?.let { selected ->
+            visibleQuakeEvents.any { quake -> quake.id == selected.id }
+        } == true
+
+        val quakeToSelect = when {
+            visibleQuakeEvents.isEmpty() -> null
+            selectFirstVisibleEvent -> visibleQuakeEvents.first()
+            selectedStillVisible -> selectedQuake
+            else -> visibleQuakeEvents.first()
+        }
+
+        if (quakeToSelect != null) {
+            selectQuake(quakeToSelect)
         } else {
             selectedQuake = null
             selectedQuakeDetails.text = getString(R.string.no_quake_selected)
+            selectedQuakeDetails.contentDescription = getString(R.string.no_quake_selected)
+            renderQuakeList(visibleQuakeEvents)
         }
     }
 
     private fun selectQuake(quake: QuakeEvent) {
         /*
-            Store the selected event so switches/list re-rendering can remember it.
+            Selection is shared by the map, details card, and list row.
         */
         selectedQuake = quake
-
-        /*
-            Tell the map which marker should be highlighted.
-        */
         quakeMapView.selectQuake(quake)
 
-        /*
-            Update both visible text and screen-reader text.
-        */
         selectedQuakeDetails.text = formatQuakeDetails(quake)
         selectedQuakeDetails.contentDescription = formatQuakeDetails(quake)
 
-        /*
-            Re-render list rows so the selected row can be highlighted.
-        */
-        renderQuakeList(quakeEvents)
+        renderQuakeList(visibleQuakeEvents)
     }
 
     private fun renderQuakeList(events: List<QuakeEvent>) {
         /*
-            The list is rebuilt from scratch whenever data, selection, or display
-            settings change.
+            This app uses a simple LinearLayout list.
 
-            This is simple and fine for a small list of around 30 events.
+            Since we only show up to 30 earthquakes, rebuilding the list is fine.
+            A much larger app would probably use RecyclerView instead.
         */
         quakeListContainer.removeAllViews()
 
@@ -452,19 +461,9 @@ class MainActivity : AppCompatActivity() {
         events.forEach { quake ->
             val isSelected = quake.id == selectedQuake?.id
 
-            /*
-                Each earthquake row is a TextView instead of a RecyclerView row.
-                That keeps the project smaller while still proving the feature.
-
-                For larger datasets, RecyclerView would be better.
-            */
             val row = TextView(this).apply {
                 text = getString(R.string.quake_list_item, quake.magnitude, quake.place)
 
-                /*
-                    Content descriptions help TalkBack/screen readers describe
-                    what the row means and what tapping it will do.
-                */
                 contentDescription = getString(
                     R.string.quake_list_item_content_description,
                     quake.magnitude,
@@ -477,9 +476,6 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(16), dp(14), dp(16), dp(14))
                 background = createRowBackground(isSelected)
 
-                /*
-                    These make the row behave like an accessible button/list item.
-                */
                 isClickable = true
                 isFocusable = true
 
@@ -499,30 +495,127 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateInclusiveDisplay() {
+    private fun updateSummary() {
         /*
-            Read the current switch states once, then apply them across the UI.
+            The summary turns raw API data into quick useful information.
+            It also gives screen-reader users a text-based overview of the data.
         */
+        val summaryText = when {
+            quakeEvents.isEmpty() -> {
+                getString(R.string.summary_no_events)
+            }
+
+            visibleQuakeEvents.isEmpty() -> {
+                getString(R.string.summary_no_visible, quakeEvents.size)
+            }
+
+            else -> {
+                val strongest = quakeEvents.maxByOrNull { quake -> quake.magnitude }
+                val averageDepth = quakeEvents.map { quake -> quake.depthKm }.average()
+
+                getString(
+                    R.string.summary_loaded,
+                    quakeEvents.size,
+                    visibleQuakeEvents.size,
+                    strongest?.magnitude ?: 0.0,
+                    strongest?.place ?: "Unknown location",
+                    averageDepth
+                )
+            }
+        }
+
+        dataSummaryText.text = summaryText
+        dataSummaryText.contentDescription = summaryText
+
+        currentFilterText.text = getString(R.string.current_filter, filterLabel())
+        currentFilterText.contentDescription = currentFilterText.text
+    }
+
+    private fun updateFilterButtons() {
+        /*
+            Keep the filter buttons visually synced with the active filter.
+        */
+        styleFilterButton(filterAllButton, minimumMagnitudeFilter == 0.0)
+        styleFilterButton(filter25Button, minimumMagnitudeFilter == 2.5)
+        styleFilterButton(filter40Button, minimumMagnitudeFilter == 4.0)
+        styleFilterButton(filter50Button, minimumMagnitudeFilter == 5.0)
+    }
+
+    private fun styleFilterButton(button: Button, isSelected: Boolean) {
+        /*
+            Filter buttons are styled for legibility first.
+
+            The button fill stays light gray and the text stays black whether the
+            filter is selected or not. Selection is shown with a purple border
+            instead of changing the full button color.
+        */
+        val highContrast = highContrastSwitch.isChecked
+
+        val fillColor = if (highContrast) {
+            Color.BLACK
+        } else {
+            Color.rgb(235, 235, 235)
+        }
+
+        val textColor = if (highContrast) {
+            Color.WHITE
+        } else {
+            Color.BLACK
+        }
+
+        val strokeColor = when {
+            highContrast && isSelected -> Color.YELLOW
+            highContrast -> Color.WHITE
+            isSelected -> Color.rgb(103, 58, 183)
+            else -> Color.rgb(190, 190, 190)
+        }
+
+        val strokeWidth = if (isSelected) {
+            dp(3)
+        } else {
+            dp(1)
+        }
+
+        button.setTextColor(textColor)
+        button.textSize = if (largeTextSwitch.isChecked) 15f else 13f
+        button.background = GradientDrawable().apply {
+            cornerRadius = dp(10).toFloat()
+            setColor(fillColor)
+            setStroke(strokeWidth, strokeColor)
+        }
+    }
+
+    private fun filterLabel(): String {
+        /*
+            Convert the numeric filter state into a user-facing label.
+        */
+        return when (minimumMagnitudeFilter) {
+            2.5 -> getString(R.string.filter_2_5)
+            4.0 -> getString(R.string.filter_4_0)
+            5.0 -> getString(R.string.filter_5_0)
+            else -> getString(R.string.filter_all)
+        }
+    }
+
+    private fun updateInclusiveDisplay() {
         val highContrast = highContrastSwitch.isChecked
         val largeText = largeTextSwitch.isChecked
 
-        /*
-            The map draws itself manually, so we pass the high contrast setting
-            into the custom View.
-        */
         quakeMapView.setHighContrast(highContrast)
 
-        /*
-            Main background and status text.
-        */
         mainContent.setBackgroundColor(if (highContrast) Color.BLACK else Color.rgb(247, 244, 238))
+
         statusText.setBackgroundColor(if (highContrast) Color.rgb(25, 25, 25) else Color.WHITE)
         statusText.setTextColor(if (highContrast) Color.WHITE else Color.rgb(63, 58, 52))
         statusText.textSize = if (largeText) 19f else 15f
 
-        /*
-            Selected earthquake details card.
-        */
+        dataSummaryText.setBackgroundColor(if (highContrast) Color.rgb(25, 25, 25) else Color.WHITE)
+        dataSummaryText.setTextColor(if (highContrast) Color.WHITE else Color.rgb(42, 42, 42))
+        dataSummaryText.textSize = if (largeText) 20f else 16f
+
+        currentFilterText.setTextColor(if (highContrast) Color.WHITE else Color.rgb(63, 58, 52))
+        currentFilterText.textSize = if (largeText) 19f else 15f
+
         selectedQuakeDetails.setBackgroundColor(if (highContrast) Color.rgb(25, 25, 25) else Color.WHITE)
         selectedQuakeDetails.setTextColor(if (highContrast) Color.WHITE else Color.rgb(42, 42, 42))
         selectedQuakeDetails.textSize = if (largeText) 20f else 16f
@@ -530,11 +623,10 @@ class MainActivity : AppCompatActivity() {
         val titleColor = if (highContrast) Color.WHITE else Color.rgb(31, 31, 31)
         val bodyColor = if (highContrast) Color.WHITE else Color.rgb(63, 58, 52)
 
-        /*
-            These are the main section headings.
-        */
         val titleIds = listOf(
             R.id.appTitle,
+            R.id.dataSummaryTitle,
+            R.id.filterTitle,
             R.id.selectedQuakeTitle,
             R.id.inclusivityTitle,
             R.id.recentQuakesTitle
@@ -544,39 +636,27 @@ class MainActivity : AppCompatActivity() {
             findViewById<TextView>(id).setTextColor(titleColor)
         }
 
-        /*
-            Subtitle uses body styling rather than title styling.
-        */
         findViewById<TextView>(R.id.appSubtitle).apply {
             setTextColor(bodyColor)
             textSize = if (largeText) 20f else 16f
         }
 
-        /*
-            Switch labels should also remain readable in high contrast mode.
-        */
         highContrastSwitch.setTextColor(bodyColor)
         largeTextSwitch.setTextColor(bodyColor)
 
-        /*
-            Apply larger text sizes where appropriate.
-        */
         findViewById<TextView>(R.id.appTitle).textSize = if (largeText) 34f else 30f
+        findViewById<TextView>(R.id.dataSummaryTitle).textSize = if (largeText) 24f else 20f
+        findViewById<TextView>(R.id.filterTitle).textSize = if (largeText) 24f else 20f
         findViewById<TextView>(R.id.selectedQuakeTitle).textSize = if (largeText) 24f else 20f
         findViewById<TextView>(R.id.inclusivityTitle).textSize = if (largeText) 24f else 20f
         findViewById<TextView>(R.id.recentQuakesTitle).textSize = if (largeText) 24f else 20f
 
-        /*
-            Reformat the details text so it stays in sync with the selected event.
-        */
         selectedQuakeDetails.text = selectedQuake?.let { formatQuakeDetails(it) }
             ?: getString(R.string.no_quake_selected)
 
-        /*
-            Rebuild list rows so high contrast, large text, and selection styling
-            are applied to every row.
-        */
-        renderQuakeList(quakeEvents)
+        updateSummary()
+        updateFilterButtons()
+        renderQuakeList(visibleQuakeEvents)
     }
 
     private fun formatQuakeDetails(quake: QuakeEvent): String {
@@ -586,10 +666,6 @@ class MainActivity : AppCompatActivity() {
             "Source: ${quake.eventUrl}"
         }
 
-        /*
-            This text is shown in the details card and also used for the card's
-            contentDescription.
-        */
         return String.format(
             Locale.US,
             "Magnitude %.1f\n%s\n%s\nLatitude %.2f, Longitude %.2f\nDepth %.1f km\n%s",
@@ -604,12 +680,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createRowBackground(isSelected: Boolean): GradientDrawable {
-        /*
-            GradientDrawable lets us create a rounded rectangle background in code.
-
-            This avoids needing several XML drawable files while still making the
-            selected row and high contrast mode visually clear.
-        */
         val highContrast = highContrastSwitch.isChecked
 
         val fillColor = when {
@@ -635,10 +705,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int {
         /*
-            Android layouts use density-independent pixels, but drawing and
-            programmatic padding need actual pixels.
-
-            This helper converts dp to pixels based on the device screen density.
+            Convert density-independent pixels to real pixels for programmatic
+            padding, borders, and rounded corners.
         */
         return (value * resources.displayMetrics.density).toInt()
     }
