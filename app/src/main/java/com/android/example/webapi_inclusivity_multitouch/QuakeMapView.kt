@@ -12,7 +12,11 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import kotlin.math.PI
 import kotlin.math.hypot
+import kotlin.math.ln
+import kotlin.math.min
+import kotlin.math.sin
 
 /*
     QuakeMapView is a custom Android View.
@@ -64,7 +68,8 @@ class QuakeMapView @JvmOverloads constructor(
         MIN_SCALE is the normal reset/default view.
         MAX_SCALE is the farthest the user can pinch zoom.
     */
-    private val defaultScaleFactor = 1.05f
+
+    private val defaultScaleFactor = 1.05f //defaultScaleFactor is set to 1.05 to be sure that the map fills viewport (for visual appeal more than true functionality)
     private val minScaleFactor = 1.05f
     private val maxScaleFactor = 10f
 
@@ -90,6 +95,16 @@ class QuakeMapView @JvmOverloads constructor(
         1f means the image is fitted to the normal map box.
         Larger values zoom in by drawing the image larger than the box.
     */
+
+    /*
+        Web Mercator maps do not actually reach latitude +/-90 degrees because the
+        projection approaches infinity near the poles.
+
+        This common Web Mercator limit keeps latitude conversion aligned with a
+        square Mercator-style world map.
+    */
+    private val maxMercatorLatitude = 85.05112878
+
     private var scaleFactor = defaultScaleFactor
 
     /*
@@ -479,16 +494,30 @@ class QuakeMapView @JvmOverloads constructor(
 
     private fun mapRect(): RectF {
         /*
-            This is the fixed viewport rectangle.
+            The uploaded Mercator map image is square.
 
-            It leaves room above for the instructions and marker legend.
+            If we draw that square image into a wide-but-short rectangle, it gets
+            vertically squished. To avoid that, this viewport is always square.
+
+            The custom View itself can be taller than the square map so there is
+            still room for the instructions and marker legend above it.
         */
-        return RectF(
-            width * 0.04f,
-            dp(96).toFloat(),
-            width * 0.96f,
-            height * 0.92f
-        )
+        val horizontalPadding = width * 0.04f
+        val availableLeft = horizontalPadding
+        val availableRight = width - horizontalPadding
+        val availableWidth = availableRight - availableLeft
+
+        val top = dp(96).toFloat()
+        val bottomPadding = dp(16).toFloat()
+        val availableHeight = height - top - bottomPadding
+
+        val size = min(availableWidth, availableHeight)
+
+        val left = (width - size) / 2f
+        val right = left + size
+        val bottom = top + size
+
+        return RectF(left, top, right, bottom)
     }
 
     private fun mapContentRect(): RectF {
@@ -546,16 +575,37 @@ class QuakeMapView @JvmOverloads constructor(
 
     private fun latitudeToY(latitude: Double): Float {
         /*
-            Convert latitude from 90..-90 into a y position inside the current
-            map image rectangle.
+            Convert latitude into a y position using Mercator projection math.
 
-            This matches the uploaded square projection image closely enough for
-            the project because the image is being used as a visual reference
-            map rather than a precision GIS layer.
+            The earlier version mapped latitude linearly from 90..-90. That works
+            for a simple equirectangular grid, but not for a Mercator map image.
+
+            On a Mercator map, locations farther from the equator are stretched
+            vertically. If we do not account for that, earthquake markers appear
+            shifted away from their true visual locations.
+
+            Note:
+            The marker placement is an approximation because the app uses a static
+            Mercator-style JPG as a visual reference rather than a calibrated GIS map
+            tile layer. The Mercator conversion makes the markers close enough for
+            this project’s visual exploration purpose, but tiny alignment differences
+            may still appear depending on the image’s crop, borders, projection
+            source, or compression.
         */
         val content = mapContentRect()
-        val normalized = ((90.0 - latitude) / 180.0).coerceIn(0.0, 1.0)
-        return (content.top + normalized * content.height()).toFloat()
+
+        val clampedLatitude = latitude.coerceIn(
+            -maxMercatorLatitude,
+            maxMercatorLatitude
+        )
+
+        val latitudeRadians = Math.toRadians(clampedLatitude)
+
+        val mercatorY = 0.5 - ln(
+            (1.0 + sin(latitudeRadians)) / (1.0 - sin(latitudeRadians))
+        ) / (4.0 * PI)
+
+        return (content.top + mercatorY * content.height()).toFloat()
     }
 
     private fun markerRadius(magnitude: Double): Float {
