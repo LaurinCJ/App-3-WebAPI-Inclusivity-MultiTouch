@@ -176,6 +176,23 @@
             android:textSize="15sp"
         />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/filterShallowSwitch"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:layout_weight="1"
+                android:minHeight="48dp"
+                android:text="@string/shallow_only_button_text"
+                />
+        </LinearLayout>
+
         <com.android.example.webapi_inclusivity_multitouch.QuakeMapView
             android:id="@+id/quakeMapView"
             android:layout_width="match_parent"

@@ -8,14 +8,14 @@
     <string name="reset_map">Reset map</string>
 
     <string name="quake_map_description">Interactive earthquake map. Pinch with two fingers to zoom, drag to pan, and tap a marker to view details.</string>
-    <string name="selected_quake_title">Selected earthquake</string>
+    <string name="selected_quake_title">Selected Earthquake</string>
     <string name="no_quake_selected">Tap an earthquake marker or list item to view details.</string>
 
-    <string name="inclusivity_options">Accessibility options</string>
-    <string name="high_contrast_mode">High contrast mode</string>
-    <string name="large_text_mode">Large text mode</string>
+    <string name="inclusivity_options">Accessibility Options</string>
+    <string name="high_contrast_mode">High Contrast mode</string>
+    <string name="large_text_mode">Large Text mode</string>
 
-    <string name="recent_quakes">Earthquake list</string>
+    <string name="recent_quakes">Earthquake List</string>
     <string name="quake_list_item">M%1$.1f • %2$s</string>
     <string name="quake_list_item_content_description">Magnitude %1$.1f earthquake near %2$s. Tap to view details.</string>
 
@@ -25,12 +25,12 @@
     <string name="live_data_failed">Could not load live data. Showing sample data instead.</string>
     <string name="no_live_quakes">No earthquake events were found in the live feed.</string>
 
-    <string name="data_summary_title">Earthquake summary</string>
+    <string name="data_summary_title">Earthquake Summary</string>
     <string name="summary_no_events">No earthquake events are loaded yet.</string>
     <string name="summary_loaded">Total loaded: %1$d\nCurrently visible: %2$d\nStrongest: M%3$.1f near %4$s\nAverage depth: %5$.1f km</string>
     <string name="summary_no_visible">Total loaded: %1$d\nCurrently visible: 0\nNo earthquakes match the current filter.</string>
 
-    <string name="filter_title">Magnitude filter</string>
+    <string name="filter_title">Magnitude Filter</string>
     <string name="filter_all">All</string>
     <string name="filter_2_5">M 2.5+</string>
     <string name="filter_4_0">M 4.0+</string>
@@ -40,4 +40,6 @@
     <string name="open_usgs_page">Open USGS event page</string>
     <string name="source_page_not_available">USGS source page is not available for this event.</string>
     <string name="could_not_open_source">Could not open the USGS event page.</string>
+
+    <string name="shallow_only_button_text">Shallow Earthquakes Only</string>
 </resources>

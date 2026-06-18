@@ -45,6 +45,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var filter25Button: Button
     private lateinit var filter40Button: Button
     private lateinit var filter50Button: Button
+
+    private lateinit var shallowOnlySwitch: SwitchCompat
+    private var showShallowOnly = false
+
     private lateinit var openUsgsButton: Button
 
     /*
@@ -166,6 +170,7 @@ class MainActivity : AppCompatActivity() {
         filter25Button = findViewById(R.id.filter25Button)
         filter40Button = findViewById(R.id.filter40Button)
         filter50Button = findViewById(R.id.filter50Button)
+        shallowOnlySwitch = findViewById(R.id.filterShallowSwitch)
 
         openUsgsButton = findViewById(R.id.openUsgsButton)
 
@@ -213,6 +218,11 @@ class MainActivity : AppCompatActivity() {
 
         filter50Button.setOnClickListener {
             applyMagnitudeFilter(5.0)
+        }
+
+        shallowOnlySwitch.setOnClickListener {
+            showShallowOnly = shallowOnlySwitch.isChecked
+            applyCurrentFilter(showShallowOnly)
         }
 
         /*
@@ -397,14 +407,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyCurrentFilter(selectFirstVisibleEvent: Boolean) {
+
+        val afterShallowFilter = if (!showShallowOnly){
+            quakeEvents
+        }
+        else
+        {
+            quakeEvents.filter { quake -> quake.depthKm < 70.0}
+        }
+
         /*
             Filtering happens from quakeEvents, which is the full loaded data set.
             The result becomes visibleQuakeEvents, which powers the map/list.
         */
         visibleQuakeEvents = if (minimumMagnitudeFilter <= 0.0) {
-            quakeEvents
+            afterShallowFilter
         } else {
-            quakeEvents.filter { quake ->
+            afterShallowFilter.filter { quake ->
                 quake.magnitude >= minimumMagnitudeFilter
             }
         }
@@ -667,6 +686,8 @@ class MainActivity : AppCompatActivity() {
         currentFilterText.setTextColor(if (highContrast) Color.WHITE else Color.rgb(63, 58, 52))
         currentFilterText.textSize = if (largeText) 19f else 15f
 
+
+
         selectedQuakeDetails.setBackgroundColor(if (highContrast) Color.rgb(25, 25, 25) else Color.WHITE)
         selectedQuakeDetails.setTextColor(if (highContrast) Color.WHITE else Color.rgb(42, 42, 42))
         selectedQuakeDetails.textSize = if (largeText) 20f else 16f
@@ -694,6 +715,7 @@ class MainActivity : AppCompatActivity() {
 
         highContrastSwitch.setTextColor(bodyColor)
         largeTextSwitch.setTextColor(bodyColor)
+        shallowOnlySwitch.setTextColor(bodyColor)
 
         findViewById<TextView>(R.id.appTitle).textSize = if (largeText) 34f else 30f
         findViewById<TextView>(R.id.dataSummaryTitle).textSize = if (largeText) 24f else 20f
