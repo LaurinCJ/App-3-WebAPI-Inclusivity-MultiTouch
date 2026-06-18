@@ -36,4 +36,8 @@
     <string name="filter_4_0">M 4.0+</string>
     <string name="filter_5_0">M 5.0+</string>
     <string name="current_filter">Current filter: %1$s</string>
+
+    <string name="open_usgs_page">Open USGS event page</string>
+    <string name="source_page_not_available">USGS source page is not available for this event.</string>
+    <string name="could_not_open_source">Could not open the USGS event page.</string>
 </resources>

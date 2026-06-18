@@ -19,6 +19,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.concurrent.thread
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.view.View
 
 class MainActivity : AppCompatActivity() {
     /*
@@ -41,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var filter25Button: Button
     private lateinit var filter40Button: Button
     private lateinit var filter50Button: Button
+    private lateinit var openUsgsButton: Button
 
     /*
         quakeEvents stores the full data set currently loaded.
@@ -162,6 +167,8 @@ class MainActivity : AppCompatActivity() {
         filter40Button = findViewById(R.id.filter40Button)
         filter50Button = findViewById(R.id.filter50Button)
 
+        openUsgsButton = findViewById(R.id.openUsgsButton)
+
         /*
             The custom map reports marker taps back to MainActivity through this
             callback.
@@ -176,6 +183,16 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.refreshDataButton).setOnClickListener {
             loadLiveEarthquakeData()
+        }
+
+        /*
+            The selected earthquake can include a USGS source URL.
+
+            This button opens that official event page in a browser. It is hidden when
+            the selected item is sample data or does not have a source URL.
+        */
+        openUsgsButton.setOnClickListener {
+            openSelectedUsgsPage()
         }
 
         /*
@@ -413,13 +430,15 @@ class MainActivity : AppCompatActivity() {
             selectedQuake = null
             selectedQuakeDetails.text = getString(R.string.no_quake_selected)
             selectedQuakeDetails.contentDescription = getString(R.string.no_quake_selected)
+            updateOpenUsgsButton()
             renderQuakeList(visibleQuakeEvents)
         }
     }
 
     private fun selectQuake(quake: QuakeEvent) {
         /*
-            Selection is shared by the map, details card, and list row.
+            Selection is shared by the map, details card, list row, and source-page
+            button.
         */
         selectedQuake = quake
         quakeMapView.selectQuake(quake)
@@ -427,6 +446,7 @@ class MainActivity : AppCompatActivity() {
         selectedQuakeDetails.text = formatQuakeDetails(quake)
         selectedQuakeDetails.contentDescription = formatQuakeDetails(quake)
 
+        updateOpenUsgsButton()
         renderQuakeList(visibleQuakeEvents)
     }
 
@@ -676,32 +696,120 @@ class MainActivity : AppCompatActivity() {
 
         selectedQuakeDetails.text = selectedQuake?.let { formatQuakeDetails(it) }
             ?: getString(R.string.no_quake_selected)
+        updateOpenUsgsButton()
 
         updateSummary()
         styleMainActionButton(findViewById(R.id.refreshDataButton))
         styleMainActionButton(findViewById(R.id.resetMapButton))
+        styleMainActionButton(openUsgsButton)
         updateFilterButtons()
         renderQuakeList(visibleQuakeEvents)
     }
 
     private fun formatQuakeDetails(quake: QuakeEvent): String {
-        val urlText = if (quake.eventUrl.isBlank()) {
-            "Source URL not available"
+        /*
+            The details panel should explain the event instead of only dumping raw
+            API values.
+
+            Magnitude and depth categories give the user a clearer frame of
+            reference when reading the earthquake data.
+        */
+        val sourceText = if (quake.eventUrl.isBlank()) {
+            getString(R.string.source_page_not_available)
         } else {
-            "Source: ${quake.eventUrl}"
+            "Official USGS event page is available."
         }
 
         return String.format(
             Locale.US,
-            "Magnitude %.1f\n%s\n%s\nLatitude %.2f, Longitude %.2f\nDepth %.1f km\n%s",
+            "Magnitude %.1f (%s)\n%s\n%s\nLatitude %.2f, Longitude %.2f\nDepth %.1f km (%s)\n%s",
             quake.magnitude,
+            magnitudeCategory(quake.magnitude),
             quake.place,
             quake.timeText,
             quake.latitude,
             quake.longitude,
             quake.depthKm,
-            urlText
+            depthCategory(quake.depthKm),
+            sourceText
         )
+    }
+
+    private fun magnitudeCategory(magnitude: Double): String {
+        /*
+            These labels are intentionally simple user-facing categories.
+
+            They help the user understand whether the event is small, moderate, or
+            more serious without needing to interpret the number alone.
+        */
+        return when {
+            magnitude < 2.5 -> "minor"
+            magnitude < 4.0 -> "light"
+            magnitude < 5.0 -> "moderate"
+            magnitude < 6.0 -> "strong"
+            else -> "major"
+        }
+    }
+
+    private fun depthCategory(depthKm: Double): String {
+        /*
+            Depth gives context about where the earthquake occurred underground.
+
+            This simplified grouping is enough for a student app and makes the
+            detail panel more readable.
+        */
+        return when {
+            depthKm < 70.0 -> "shallow"
+            depthKm < 300.0 -> "intermediate"
+            else -> "deep"
+        }
+    }
+
+    private fun updateOpenUsgsButton() {
+        /*
+            Only show the button when the selected earthquake has a real URL.
+
+            Sample events do not include official source links, so hiding the button
+            prevents the user from tapping something that cannot work.
+        */
+        val hasSourceUrl = selectedQuake?.eventUrl?.isNotBlank() == true
+
+        openUsgsButton.visibility = if (hasSourceUrl) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
+
+        openUsgsButton.isEnabled = hasSourceUrl
+    }
+
+    private fun openSelectedUsgsPage() {
+        /*
+            Open the official USGS source page for the currently selected event.
+
+            Intent.ACTION_VIEW asks Android to use an appropriate app, usually the
+            browser, to open the URL.
+        */
+        val url = selectedQuake?.eventUrl
+
+        if (url.isNullOrBlank()) {
+            return
+        }
+
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            startActivity(intent)
+        } catch (exception: ActivityNotFoundException) {
+            /*
+                This is unlikely on a normal emulator/device, but it prevents a crash
+                if there is no app available to open web links.
+            */
+            android.widget.Toast.makeText(
+                this,
+                getString(R.string.could_not_open_source),
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun createRowBackground(isSelected: Boolean): GradientDrawable {

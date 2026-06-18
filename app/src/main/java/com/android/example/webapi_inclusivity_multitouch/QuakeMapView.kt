@@ -66,7 +66,7 @@ class QuakeMapView @JvmOverloads constructor(
     */
     private val defaultScaleFactor = 1.05f
     private val minScaleFactor = 1.05f
-    private val maxScaleFactor = 5f
+    private val maxScaleFactor = 10f
 
     /*
         This bitmap is the Mercator projection image stored in res/drawable.
