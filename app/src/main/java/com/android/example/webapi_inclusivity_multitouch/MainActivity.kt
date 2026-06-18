@@ -231,8 +231,16 @@ class MainActivity : AppCompatActivity() {
             Start with sample data so the app immediately shows a useful UI.
             Then attempt to replace it with live data.
         */
-        showQuakeEvents(sampleQuakes)
-        statusText.text = getString(R.string.sample_data_loaded)
+
+        /*
+            Start with an empty screen while live data loads.
+
+            Sample earthquakes are still kept in the code as fallback data, but they are
+            no longer shown briefly during normal startup because that made the app look
+            like it was flashing from fake data to live data.
+        */
+        showQuakeEvents(emptyList())
+        statusText.text = getString(R.string.loading_live_data)
 
         loadLiveEarthquakeData()
         updateInclusiveDisplay()
