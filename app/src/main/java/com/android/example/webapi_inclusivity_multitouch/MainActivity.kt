@@ -23,6 +23,8 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.view.View
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : AppCompatActivity() {
     /*
@@ -142,6 +144,8 @@ class MainActivity : AppCompatActivity() {
         */
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
+
+        hideSystemBars()
 
         /*
             This keeps content from being hidden by the status bar or bottom
@@ -863,6 +867,31 @@ class MainActivity : AppCompatActivity() {
             cornerRadius = dp(12).toFloat()
             setColor(fillColor)
             setStroke(dp(2), strokeColor)
+        }
+    }
+
+    private fun hideSystemBars() {
+        /*
+            Hide the phone's status bar and navigation bar for an immersive app view.
+
+            The bars can still be temporarily shown by swiping from the top or bottom
+            edge of the screen, which keeps the app usable while giving the map more
+            space during normal use.
+        */
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+
+        if (hasFocus) {
+            hideSystemBars()
         }
     }
 
