@@ -158,7 +158,34 @@ class QuakeMapView @JvmOverloads constructor(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(minScaleFactor, maxScaleFactor)
+                /*
+                    Zoom around the user's pinch focus point instead of always zooming around
+                    the center of the map. This keeps the part of the map under the user's
+                    fingers in roughly the same screen location while zooming.
+                */
+                val viewport = mapRect()
+
+                val oldScaleFactor = scaleFactor
+                val newScaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(
+                    minScaleFactor,
+                    maxScaleFactor
+                )
+
+                val scaleChange = newScaleFactor / oldScaleFactor
+
+                val oldCenterX = viewport.centerX() + offsetX
+                val oldCenterY = viewport.centerY() + offsetY
+
+                val focusX = detector.focusX
+                val focusY = detector.focusY
+
+                val newCenterX = focusX - ((focusX - oldCenterX) * scaleChange)
+                val newCenterY = focusY - ((focusY - oldCenterY) * scaleChange)
+
+                scaleFactor = newScaleFactor
+                offsetX = newCenterX - viewport.centerX()
+                offsetY = newCenterY - viewport.centerY()
+
                 clampPanOffsets()
                 invalidate()
                 return true
@@ -297,6 +324,21 @@ class QuakeMapView @JvmOverloads constructor(
                 }
 
                 parent?.requestDisallowInterceptTouchEvent(false)
+                return true
+            }
+
+            MotionEvent.ACTION_POINTER_UP -> {
+                /*
+                    When one finger is lifted during a two-finger gesture, reset the drag
+                    anchor to the finger that is still touching the screen. Without this,
+                    the next one-finger drag can compare against the old two-finger position
+                    and make the map snap.
+                */
+                val remainingPointerIndex = if (event.actionIndex == 0) 1 else 0
+
+                lastX = event.getX(remainingPointerIndex)
+                lastY = event.getY(remainingPointerIndex)
+
                 return true
             }
 
