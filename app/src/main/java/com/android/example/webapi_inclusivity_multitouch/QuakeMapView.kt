@@ -1,49 +1,165 @@
 package com.android.example.webapi_inclusivity_multitouch
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import kotlin.math.PI
 import kotlin.math.hypot
+import kotlin.math.ln
+import kotlin.math.min
+import kotlin.math.sin
 
+/*
+    QuakeMapView is a custom Android View.
+
+    This view draws a fixed "window" or viewport. Inside that viewport, it draws
+    the Mercator world map image and earthquake markers.
+
+    The important interaction design idea is:
+    - the box stays still
+    - the map image moves inside the box
+    - the earthquake markers move with the map image
+    - the image is clipped so it never draws outside the map box
+
+    This makes panning feel like looking around inside a map window instead of
+    sliding the entire UI element around the screen.
+*/
 class QuakeMapView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
+    /*
+        This callback lets MainActivity know when the user taps a marker.
+
+        The custom View handles touch detection and drawing. MainActivity handles
+        updating the selected earthquake details and list.
+    */
     var onQuakeSelected: ((QuakeEvent) -> Unit)? = null
 
+    /*
+        Internal earthquake list currently displayed on the map.
+    */
     private val quakes = mutableListOf<QuakeEvent>()
 
+    /*
+        The selected earthquake id is used to draw a highlight ring and label.
+    */
     private var selectedQuakeId: String? = null
+
+    /*
+        High contrast mode changes marker/label colors and darkens the map area.
+    */
     private var highContrast = false
 
-    private var scaleFactor = 1f
+    /*
+        The map starts slightly zoomed in so the world image feels less tiny inside
+        the viewport.
+
+        MIN_SCALE is the normal reset/default view.
+        MAX_SCALE is the farthest the user can pinch zoom.
+    */
+
+    private val defaultScaleFactor = 1.05f //defaultScaleFactor is set to 1.05 to be sure that the map fills viewport (for visual appeal more than true functionality)
+    private val minScaleFactor = 1.05f
+    private val maxScaleFactor = 10f
+
+    /*
+        This bitmap is the Mercator projection image stored in res/drawable.
+
+        The image is drawn into a destination rectangle that can be zoomed and
+        panned inside the fixed map box.
+    */
+    private val mapBitmap: Bitmap = BitmapFactory.decodeResource(
+        resources,
+        R.drawable.mercator_projection_square
+    )
+
+    /*
+        Source rectangle for the whole bitmap image.
+    */
+    private val bitmapSourceRect = Rect(0, 0, mapBitmap.width, mapBitmap.height)
+
+    /*
+        scaleFactor controls zoom.
+
+        1f means the image is fitted to the normal map box.
+        Larger values zoom in by drawing the image larger than the box.
+    */
+
+    /*
+        Web Mercator maps do not actually reach latitude +/-90 degrees because the
+        projection approaches infinity near the poles.
+
+        This common Web Mercator limit keeps latitude conversion aligned with a
+        square Mercator-style world map.
+    */
+    private val maxMercatorLatitude = 85.05112878
+
+    private var scaleFactor = defaultScaleFactor
+
+    /*
+        offsetX and offsetY pan the image inside the fixed viewport.
+
+        These values are clamped so the user cannot slide the map infinitely.
+    */
     private var offsetX = 0f
     private var offsetY = 0f
 
+    /*
+        These touch variables help separate tapping from dragging.
+    */
     private var downX = 0f
     private var downY = 0f
     private var lastX = 0f
     private var lastY = 0f
     private var totalMove = 0f
 
+    /*
+        Paint objects store drawing settings.
+
+        Reusing Paint objects avoids repeatedly creating new objects inside
+        onDraw(), which can hurt performance.
+    */
     private val mapPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        /*
+            These settings make the JPG look smoother when Android scales it during
+            zooming and panning.
+
+            This does not add image detail that is not in the file, but it reduces
+            harsh pixel edges and makes scaling look cleaner.
+        */
+        isFilterBitmap = true
+        isDither = true
+    }
+
     private val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val selectedPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
+    /*
+        ScaleGestureDetector handles the two-finger pinch gesture.
+
+        Android gives us raw MotionEvents, and ScaleGestureDetector interprets
+        them as zoom changes.
+    */
     private val scaleDetector = ScaleGestureDetector(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
-                scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(0.8f, 7f)
+                scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(minScaleFactor, maxScaleFactor)
+                clampPanOffsets()
                 invalidate()
                 return true
             }
@@ -51,30 +167,47 @@ class QuakeMapView @JvmOverloads constructor(
     )
 
     init {
+        /*
+            These make the custom View behave like an interactive UI element.
+        */
         isClickable = true
         isFocusable = true
     }
 
     fun setQuakes(newQuakes: List<QuakeEvent>) {
+        /*
+            Replace the map's data with the current visible earthquake list.
+        */
         quakes.clear()
         quakes.addAll(newQuakes)
+
         contentDescription =
             "Interactive earthquake map showing ${quakes.size} earthquake events. Pinch to zoom, drag to pan, and tap a marker for details."
+
         invalidate()
     }
 
     fun selectQuake(quake: QuakeEvent) {
+        /*
+            Store which earthquake should be highlighted.
+        */
         selectedQuakeId = quake.id
         invalidate()
     }
 
     fun setHighContrast(enabled: Boolean) {
+        /*
+            MainActivity calls this when the high contrast switch changes.
+        */
         highContrast = enabled
         invalidate()
     }
 
     fun resetView() {
-        scaleFactor = 1f
+        /*
+            Return the map image to the centered, unzoomed starting position.
+        */
+        scaleFactor = defaultScaleFactor
         offsetX = 0f
         offsetY = 0f
         invalidate()
@@ -83,24 +216,35 @@ class QuakeMapView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val backgroundColor = if (highContrast) Color.BLACK else Color.rgb(230, 239, 244)
-        canvas.drawColor(backgroundColor)
+        /*
+            Draw the overall custom view background.
+        */
+        canvas.drawColor(if (highContrast) Color.BLACK else Color.rgb(230, 239, 244))
 
+        /*
+            These UI hints stay outside the panned/zoomed map content, so they
+            remain readable no matter where the user moves the map.
+        */
         drawInstructions(canvas)
+        drawScreenLegend(canvas)
 
-        canvas.save()
-        canvas.translate(width / 2f + offsetX, height / 2f + offsetY)
-        canvas.scale(scaleFactor, scaleFactor)
-        canvas.translate(-width / 2f, -height / 2f)
-
-        drawMapBase(canvas)
-        drawQuakeMarkers(canvas)
-
-        canvas.restore()
+        /*
+            Draw the fixed map viewport and all content inside it.
+        */
+        drawMapViewport(canvas)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        /*
+            Prevent the surrounding NestedScrollView from stealing gestures while
+            the user is interacting with the map.
+        */
         parent?.requestDisallowInterceptTouchEvent(true)
+
+        /*
+            Always pass touch events to the scale detector so it can recognize
+            two-finger pinch zoom.
+        */
         scaleDetector.onTouchEvent(event)
 
         when (event.actionMasked) {
@@ -114,21 +258,35 @@ class QuakeMapView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                /*
+                    One-finger movement pans the map image inside the viewport.
+                    During pinch zoom, we do not also treat movement as a pan.
+                */
                 if (event.pointerCount == 1 && !scaleDetector.isInProgress) {
                     val dx = event.x - lastX
                     val dy = event.y - lastY
+
                     offsetX += dx
                     offsetY += dy
+
+                    clampPanOffsets()
+
                     totalMove += hypot(dx, dy)
                     lastX = event.x
                     lastY = event.y
+
                     invalidate()
                 }
                 return true
             }
 
             MotionEvent.ACTION_UP -> {
+                /*
+                    A tiny movement is treated as a tap. A larger movement is
+                    treated as a pan.
+                */
                 val tapDistance = hypot(event.x - downX, event.y - downY)
+
                 if (tapDistance < dp(12) && totalMove < dp(12)) {
                     findNearestQuake(event.x, event.y)?.let { quake ->
                         selectedQuakeId = quake.id
@@ -137,6 +295,7 @@ class QuakeMapView @JvmOverloads constructor(
                         invalidate()
                     }
                 }
+
                 parent?.requestDisallowInterceptTouchEvent(false)
                 return true
             }
@@ -151,61 +310,60 @@ class QuakeMapView @JvmOverloads constructor(
     }
 
     override fun performClick(): Boolean {
+        /*
+            Calling super supports accessibility behavior for custom clickable
+            views.
+        */
         super.performClick()
         return true
     }
 
-    private fun drawInstructions(canvas: Canvas) {
-        textPaint.color = if (highContrast) Color.WHITE else Color.rgb(35, 35, 35)
-        textPaint.textSize = dp(13).toFloat()
-        textPaint.textAlign = Paint.Align.CENTER
-        canvas.drawText(
-            "Pinch to zoom • Drag to pan • Tap a marker",
-            width / 2f,
-            dp(26).toFloat(),
-            textPaint
-        )
-    }
+    private fun drawMapViewport(canvas: Canvas) {
+        val viewport = mapRect()
+        val content = mapContentRect()
 
-    private fun drawMapBase(canvas: Canvas) {
-        val plot = mapRect()
-
+        /*
+            Draw a background behind the map image. If the user pans far enough
+            that an image edge reaches the center, this background shows in the
+            empty part of the viewport.
+        */
         mapPaint.style = Paint.Style.FILL
-        mapPaint.color = if (highContrast) Color.rgb(10, 10, 10) else Color.rgb(205, 226, 235)
-        canvas.drawRoundRect(plot, dp(18).toFloat(), dp(18).toFloat(), mapPaint)
+        mapPaint.color = if (highContrast) Color.rgb(5, 5, 5) else Color.rgb(185, 210, 220)
+        canvas.drawRoundRect(viewport, dp(14).toFloat(), dp(14).toFloat(), mapPaint)
 
+        /*
+            Clip everything inside the viewport. This is the "mask" behavior:
+            the map image and markers can move, but they cannot draw outside the
+            fixed map box.
+        */
+        canvas.save()
+        canvas.clipRect(viewport)
+
+        /*
+            In high contrast mode, the bitmap is dimmed slightly so the bright
+            marker colors and labels remain easy to see.
+        */
+        bitmapPaint.alpha = if (highContrast) 135 else 255
+
+        canvas.drawBitmap(mapBitmap, bitmapSourceRect, content, bitmapPaint)
+
+        /*
+            Markers are drawn after the bitmap so they appear on top of the map.
+            Because marker positions use the same content rectangle, they pan and
+            zoom with the map image.
+        */
+        drawQuakeMarkers(canvas)
+
+        canvas.restore()
+
+        /*
+            Draw the viewport border after restoring so the border is always
+            visible and not clipped weirdly.
+        */
         mapPaint.style = Paint.Style.STROKE
         mapPaint.strokeWidth = dp(2).toFloat()
-        mapPaint.color = if (highContrast) Color.WHITE else Color.rgb(80, 100, 110)
-        canvas.drawRoundRect(plot, dp(18).toFloat(), dp(18).toFloat(), mapPaint)
-
-        gridPaint.style = Paint.Style.STROKE
-        gridPaint.strokeWidth = dp(1).toFloat()
-        gridPaint.color = if (highContrast) Color.rgb(120, 120, 120) else Color.rgb(145, 165, 175)
-
-        for (longitude in -150..150 step 30) {
-            val x = longitudeToX(longitude.toDouble())
-            canvas.drawLine(x, plot.top, x, plot.bottom, gridPaint)
-        }
-
-        for (latitude in -60..60 step 30) {
-            val y = latitudeToY(latitude.toDouble())
-            canvas.drawLine(plot.left, y, plot.right, y, gridPaint)
-        }
-
-        gridPaint.strokeWidth = dp(2).toFloat()
-        gridPaint.color = if (highContrast) Color.YELLOW else Color.rgb(90, 120, 135)
-
-        val equatorY = latitudeToY(0.0)
-        val primeMeridianX = longitudeToX(0.0)
-
-        canvas.drawLine(plot.left, equatorY, plot.right, equatorY, gridPaint)
-        canvas.drawLine(primeMeridianX, plot.top, primeMeridianX, plot.bottom, gridPaint)
-
-        textPaint.color = if (highContrast) Color.WHITE else Color.rgb(50, 60, 65)
-        textPaint.textSize = dp(12).toFloat()
-        textPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText("Simplified world view", plot.left + dp(12), plot.top + dp(22), textPaint)
+        mapPaint.color = if (highContrast) Color.WHITE else Color.rgb(55, 75, 85)
+        canvas.drawRoundRect(viewport, dp(14).toFloat(), dp(14).toFloat(), mapPaint)
     }
 
     private fun drawQuakeMarkers(canvas: Canvas) {
@@ -221,29 +379,109 @@ class QuakeMapView @JvmOverloads constructor(
 
             markerPaint.style = Paint.Style.STROKE
             markerPaint.strokeWidth = dp(1.5f)
-            markerPaint.color = if (highContrast) Color.WHITE else Color.rgb(45, 45, 45)
+            markerPaint.color = if (highContrast) Color.WHITE else Color.rgb(30, 30, 30)
             canvas.drawCircle(x, y, radius, markerPaint)
 
             if (selected) {
                 selectedPaint.style = Paint.Style.STROKE
                 selectedPaint.strokeWidth = dp(3).toFloat()
-                selectedPaint.color = if (highContrast) Color.YELLOW else Color.rgb(30, 80, 180)
+                selectedPaint.color = if (highContrast) Color.YELLOW else Color.rgb(103, 58, 183)
                 canvas.drawCircle(x, y, radius + dp(7), selectedPaint)
+
+                drawSelectedMarkerLabel(canvas, quake, x, y, radius)
             }
         }
     }
 
-    private fun findNearestQuake(screenX: Float, screenY: Float): QuakeEvent? {
-        val baseX = ((screenX - width / 2f - offsetX) / scaleFactor) + width / 2f
-        val baseY = ((screenY - height / 2f - offsetY) / scaleFactor) + height / 2f
+    private fun drawInstructions(canvas: Canvas) {
+        textPaint.color = if (highContrast) Color.WHITE else Color.rgb(35, 35, 35)
+        textPaint.textSize = dp(13).toFloat()
+        textPaint.textAlign = Paint.Align.CENTER
 
+        canvas.drawText(
+            "Pinch to zoom • Drag the map • Tap a marker",
+            width / 2f,
+            dp(24).toFloat(),
+            textPaint
+        )
+    }
+
+    private fun drawScreenLegend(canvas: Canvas) {
+        /*
+            The legend is drawn outside the map transform so it always stays
+            readable.
+        */
+        val legendLeft = dp(12).toFloat()
+        val legendTop = dp(42).toFloat()
+        val lineHeight = dp(17).toFloat()
+
+        textPaint.textAlign = Paint.Align.LEFT
+        textPaint.textSize = dp(11).toFloat()
+        textPaint.color = if (highContrast) Color.WHITE else Color.rgb(35, 35, 35)
+
+        canvas.drawText("Marker guide:", legendLeft, legendTop, textPaint)
+
+        drawLegendMarker(canvas, legendLeft + dp(8), legendTop + lineHeight, 3.0, "M < 4")
+        drawLegendMarker(canvas, legendLeft + dp(8), legendTop + lineHeight * 2, 4.5, "M 4-4.9")
+        drawLegendMarker(canvas, legendLeft + dp(8), legendTop + lineHeight * 3, 5.5, "M 5+")
+    }
+
+    private fun drawLegendMarker(
+        canvas: Canvas,
+        x: Float,
+        y: Float,
+        magnitude: Double,
+        label: String
+    ) {
+        markerPaint.style = Paint.Style.FILL
+        markerPaint.color = markerColor(magnitude)
+        canvas.drawCircle(x, y - dp(4), dp(5).toFloat(), markerPaint)
+
+        markerPaint.style = Paint.Style.STROKE
+        markerPaint.strokeWidth = dp(1).toFloat()
+        markerPaint.color = if (highContrast) Color.WHITE else Color.rgb(45, 45, 45)
+        canvas.drawCircle(x, y - dp(4), dp(5).toFloat(), markerPaint)
+
+        textPaint.textAlign = Paint.Align.LEFT
+        textPaint.textSize = dp(11).toFloat()
+        textPaint.color = if (highContrast) Color.WHITE else Color.rgb(35, 35, 35)
+
+        canvas.drawText(label, x + dp(12), y, textPaint)
+    }
+
+    private fun drawSelectedMarkerLabel(
+        canvas: Canvas,
+        quake: QuakeEvent,
+        x: Float,
+        y: Float,
+        radius: Float
+    ) {
+        /*
+            Label the selected marker so the highlighted dot is easier to connect
+            to the details section below the map.
+        */
+        val label = String.format("M%.1f", quake.magnitude)
+
+        textPaint.textAlign = Paint.Align.LEFT
+        textPaint.textSize = dp(12).toFloat()
+        textPaint.color = if (highContrast) Color.YELLOW else Color.rgb(103, 58, 183)
+
+        canvas.drawText(label, x + radius + dp(8), y - radius - dp(4), textPaint)
+    }
+
+    private fun findNearestQuake(screenX: Float, screenY: Float): QuakeEvent? {
+        /*
+            Because markers are drawn directly into screen coordinates using the
+            current mapContentRect(), we can compare the tap location against
+            the current marker positions directly.
+        */
         var nearest: QuakeEvent? = null
         var nearestDistance = Float.MAX_VALUE
 
         quakes.forEach { quake ->
             val quakeX = longitudeToX(quake.longitude)
             val quakeY = latitudeToY(quake.latitude)
-            val distance = hypot(baseX - quakeX, baseY - quakeY)
+            val distance = hypot(screenX - quakeX, screenY - quakeY)
 
             if (distance < nearestDistance) {
                 nearestDistance = distance
@@ -254,11 +492,133 @@ class QuakeMapView @JvmOverloads constructor(
         return if (nearestDistance <= dp(36)) nearest else null
     }
 
+    private fun mapRect(): RectF {
+        /*
+            The uploaded Mercator map image is square.
+
+            If we draw that square image into a wide-but-short rectangle, it gets
+            vertically squished. To avoid that, this viewport is always square.
+
+            The custom View itself can be taller than the square map so there is
+            still room for the instructions and marker legend above it.
+        */
+        val horizontalPadding = width * 0.04f
+        val availableLeft = horizontalPadding
+        val availableRight = width - horizontalPadding
+        val availableWidth = availableRight - availableLeft
+
+        val top = dp(96).toFloat()
+        val bottomPadding = dp(16).toFloat()
+        val availableHeight = height - top - bottomPadding
+
+        val size = min(availableWidth, availableHeight)
+
+        val left = (width - size) / 2f
+        val right = left + size
+        val bottom = top + size
+
+        return RectF(left, top, right, bottom)
+    }
+
+    private fun mapContentRect(): RectF {
+        /*
+            This rectangle is where the map bitmap is drawn.
+
+            The viewport stays fixed, but this content rectangle grows/shrinks
+            with zoom and moves with pan offsets.
+        */
+        val viewport = mapRect()
+        val contentWidth = viewport.width() * scaleFactor
+        val contentHeight = viewport.height() * scaleFactor
+
+        val centerX = viewport.centerX() + offsetX
+        val centerY = viewport.centerY() + offsetY
+
+        return RectF(
+            centerX - contentWidth / 2f,
+            centerY - contentHeight / 2f,
+            centerX + contentWidth / 2f,
+            centerY + contentHeight / 2f
+        )
+    }
+
+    private fun clampPanOffsets() {
+        /*
+            Limit panning so the map cannot slide forever.
+
+            The requested rule was: the farthest the map can move is such that
+            the edge of the map can reach the middle of the viewport.
+
+            Since offsetX/offsetY move the center of the map image, the maximum
+            allowed offset is half the current content width/height.
+        */
+        val viewport = mapRect()
+        val contentWidth = viewport.width() * scaleFactor
+        val contentHeight = viewport.height() * scaleFactor
+
+        val maxOffsetX = contentWidth / 2f
+        val maxOffsetY = contentHeight / 2f
+
+        offsetX = offsetX.coerceIn(-maxOffsetX, maxOffsetX)
+        offsetY = offsetY.coerceIn(-maxOffsetY, maxOffsetY)
+    }
+
+    private fun longitudeToX(longitude: Double): Float {
+        /*
+            Convert longitude from -180..180 into an x position inside the
+            current map image rectangle.
+        */
+        val content = mapContentRect()
+        val normalized = ((longitude + 180.0) / 360.0).coerceIn(0.0, 1.0)
+        return (content.left + normalized * content.width()).toFloat()
+    }
+
+    private fun latitudeToY(latitude: Double): Float {
+        /*
+            Convert latitude into a y position using Mercator projection math.
+
+            The earlier version mapped latitude linearly from 90..-90. That works
+            for a simple equirectangular grid, but not for a Mercator map image.
+
+            On a Mercator map, locations farther from the equator are stretched
+            vertically. If we do not account for that, earthquake markers appear
+            shifted away from their true visual locations.
+
+            Note:
+            The marker placement is an approximation because the app uses a static
+            Mercator-style JPG as a visual reference rather than a calibrated GIS map
+            tile layer. The Mercator conversion makes the markers close enough for
+            this project’s visual exploration purpose, but tiny alignment differences
+            may still appear depending on the image’s crop, borders, projection
+            source, or compression.
+        */
+        val content = mapContentRect()
+
+        val clampedLatitude = latitude.coerceIn(
+            -maxMercatorLatitude,
+            maxMercatorLatitude
+        )
+
+        val latitudeRadians = Math.toRadians(clampedLatitude)
+
+        val mercatorY = 0.5 - ln(
+            (1.0 + sin(latitudeRadians)) / (1.0 - sin(latitudeRadians))
+        ) / (4.0 * PI)
+
+        return (content.top + mercatorY * content.height()).toFloat()
+    }
+
     private fun markerRadius(magnitude: Double): Float {
+        /*
+            Larger earthquakes get larger markers.
+        */
         return (dp(6) + magnitude.toFloat() * dp(2.2f)).coerceIn(dp(8f), dp(24f))
     }
 
     private fun markerColor(magnitude: Double): Int {
+        /*
+            Marker color gives a quick visual magnitude category.
+        */
         return when {
             highContrast && magnitude >= 5.0 -> Color.RED
             highContrast -> Color.YELLOW
@@ -268,32 +628,17 @@ class QuakeMapView @JvmOverloads constructor(
         }
     }
 
-    private fun mapRect(): RectF {
-        return RectF(
-            width * 0.07f,
-            height * 0.16f,
-            width * 0.93f,
-            height * 0.86f
-        )
-    }
-
-    private fun longitudeToX(longitude: Double): Float {
-        val plot = mapRect()
-        val normalized = ((longitude + 180.0) / 360.0).coerceIn(0.0, 1.0)
-        return (plot.left + normalized * plot.width()).toFloat()
-    }
-
-    private fun latitudeToY(latitude: Double): Float {
-        val plot = mapRect()
-        val normalized = ((90.0 - latitude) / 180.0).coerceIn(0.0, 1.0)
-        return (plot.top + normalized * plot.height()).toFloat()
-    }
-
     private fun dp(value: Int): Int {
+        /*
+            Convert density-independent pixels to actual pixels.
+        */
         return (value * resources.displayMetrics.density).toInt()
     }
 
     private fun dp(value: Float): Float {
+        /*
+            Float version used for marker radius and stroke widths.
+        */
         return value * resources.displayMetrics.density
     }
 }
